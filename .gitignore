@@ -1,2 +1,24 @@
+# Data
 data/
 *.csv
+
+# Jupyter
+.ipynb_checkpoints/
+
+# PyCharm / IntelliJ
+.idea/
+
+# Python general
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual envs
+env/
+venv/
+.venv/
+
+# OS garbage
+.DS_Store
+Thumbs.db
