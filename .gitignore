@@ -2,3 +2,5 @@ data/
 *.csv
 
 .ipynb_checkpoints/
+
+*.xml
