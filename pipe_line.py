@@ -3,7 +3,7 @@ from fetch_data import fetch_data, save_csv
 from feature_engineering import *
 from split_train_test import *
 from Model import *
-
+from init import *
 # ---- Ensure data directory exists ----
 if not os.path.exists(DATA_DIR):
     os.makedirs(DATA_DIR)
@@ -16,6 +16,7 @@ for name, info in FILES.items():
     if not os.path.isfile(csv_path):
         print(f"{info['filename']} does not exist — creating...")
 
+        # Determine start date
         if info["start"] == "5y":
             start = datetime.utcnow() - timedelta(days=5*365)
         elif info["start"] == "6m":
@@ -32,18 +33,8 @@ for name, info in FILES.items():
     else:
         print(f"{info['filename']} already exists — skipping.")
 
-
-# ---- Create feature file ONLY if missing ----
-if not os.path.exists(os.path.join(DATA_DIR, "btc_hourly_5y_feature.csv")):
+if not os.path.exists("btc_hourly_5y_feature.csv"):
     daily_hourly_minute()
-
-# ---- Split ONLY if both files are missing ----
-if not (
-    os.path.exists(os.path.join(DATA_DIR, "btc_hourly_5y_feature_test.csv"))
-    and
-    os.path.exists(os.path.join(DATA_DIR, "btc_hourly_5y_feature_train.csv"))
-):
+if not (os.path.exists("btc_hourly_5y_feature_test.csv") and os.path.exists("btc_hourly_5y_feature_train")):
     train_test_split()
-
-# ---- Start model ----
 start_model()
