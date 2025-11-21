@@ -1,8 +1,9 @@
-import os
 from datetime import datetime, timedelta
 from fetch_data import fetch_data, save_csv
-from init import DATA_DIR, FILES
-
+from feature_engineering import *
+from split_train_test import *
+from Model import *
+from init import *
 # ---- Ensure data directory exists ----
 if not os.path.exists(DATA_DIR):
     os.makedirs(DATA_DIR)
@@ -31,3 +32,9 @@ for name, info in FILES.items():
 
     else:
         print(f"{info['filename']} already exists — skipping.")
+
+if not os.path.exists("btc_hourly_5y_feature.csv"):
+    daily_hourly_minute()
+if not (os.path.exists("btc_hourly_5y_feature_test.csv") and os.path.exists("btc_hourly_5y_feature_train")):
+    train_test_split()
+start_model()
