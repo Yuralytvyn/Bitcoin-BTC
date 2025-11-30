@@ -34,7 +34,7 @@ for name, info in FILES.items():
         print(f"{info['filename']} already exists — skipping.")
 
 if not os.path.exists("btc_hourly_5y_feature.csv"):
-    daily_hourly_minute()
+    daily_hourly_hourly()
 if not (os.path.exists("btc_hourly_5y_feature_test.csv") and os.path.exists("btc_hourly_5y_feature_train")):
     train_test_split()
 start_model()

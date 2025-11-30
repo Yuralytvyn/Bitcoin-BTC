@@ -120,7 +120,7 @@ def _add_ma_differences(df: pd.DataFrame, short_windows: Iterable[int], long_win
                     df[f'ma_diff_{s}_{l}'] = df[short_col] - df[long_col]
 
 
-def daily_hourly_minute() -> None:
+def daily_hourly_hourly() -> None:
     """Process each CSV file in DATA_DIR and generate enhanced features.
 
     The function reads each file, sorts it by timestamp, computes a variety of
