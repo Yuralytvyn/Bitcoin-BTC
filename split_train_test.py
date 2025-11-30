@@ -118,16 +118,3 @@ def train_test_split(
         val_df.to_csv(val_path, index=False)
         print(f"Saved: {val_path}")
     return train_df, test_df, val_df
-
-
-if __name__ == "__main__":
-    # Execute the split with default configuration when run as a script
-    #
-    # The following call uses the constants defined above.  You can override
-    # ``test_size`` or enable a validation split by passing keyword arguments.
-    # For example:
-    #     split_dataset(test_size=0.1, create_validation=True, validation_size=0.1)
-    split_dataset(
-        filename=FILENAME,
-        test_size=TEST_SIZE,
-    )
