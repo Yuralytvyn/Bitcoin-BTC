@@ -10,12 +10,51 @@ ROLL_WINDOWS = [3, 5, 10, 20, 50]
 QUANTILES = [0.1, 0.25, 0.5, 0.75, 0.9]
 
 # ============================================================
+#                  ADVANCED FEATURES FOR XGBOOST
+# ============================================================
+def add_advanced_features(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    df["timestamp"] = pd.to_datetime(df["timestamp"])
+
+    # Циклічний час
+    df["hour"] = df["timestamp"].dt.hour
+    df["weekday"] = df["timestamp"].dt.weekday
+    df["hour_sin"] = np.sin(2 * np.pi * df["hour"] / 24)
+    df["hour_cos"] = np.cos(2 * np.pi * df["hour"] / 24)
+    df["weekday_sin"] = np.sin(2 * np.pi * df["weekday"] / 7)
+    df["weekday_cos"] = np.cos(2 * np.pi * df["weekday"] / 7)
+    df.drop(["hour", "weekday"], axis=1, inplace=True)
+
+    # Позиція в діапазоні бару
+    rng = df["high"] - df["low"]
+    df["pos_in_range"] = (df["close"] - df["low"]) / rng.replace(0, np.nan)
+    df["pos_in_range"].fillna(0.5, inplace=True)
+
+    # Intrabar return
+    df["intrabar_return"] = (df["close"] - df["open"]) / df["open"].replace(0, np.nan)
+    df["intrabar_return"].fillna(0, inplace=True)
+
+    # MA ratios
+    df["ma_5"] = df["close"].rolling(5, min_periods=1).mean()
+    df["ma_10"] = df["close"].rolling(10, min_periods=1).mean()
+    df["ma_50"] = df["close"].rolling(50, min_periods=1).mean()
+    df["ma_ratio_5_50"] = df["ma_5"] / df["ma_50"].replace(0, np.nan)
+    df["ma_ratio_10_50"] = df["ma_10"] / df["ma_50"].replace(0, np.nan)
+    df[["ma_ratio_5_50", "ma_ratio_10_50"]] = df[["ma_ratio_5_50", "ma_ratio_10_50"]].replace([np.inf, -np.inf], 1.0).fillna(1.0)
+
+    # Volume ratio
+    df["vol_ma_20"] = df["volume"].rolling(20, min_periods=1).mean()
+    df["volume_ratio"] = df["volume"] / df["vol_ma_20"].replace(0, np.nan)
+    df["volume_ratio"] = df["volume_ratio"].replace([np.inf, -np.inf], 1.0).fillna(1.0)
+
+    return df.drop(columns=["ma_5", "ma_10", "ma_50", "vol_ma_20"])
+
+# ============================================================
 #                     3-КЛАСОВИЙ TARGET
 # ============================================================
 def generate_target(df, threshold=0.002):
     ret = df["close"].pct_change().shift(-1)
-    target = pd.cut(ret, bins=[-999, -threshold, threshold, 999], labels=[0, 1, 2])
-    return target
+    return pd.cut(ret, bins=[-999, -threshold, threshold, 999], labels=[0, 1, 2])
 
 # ============================================================
 #                     MANUAL FEATURES
@@ -63,7 +102,6 @@ def add_tsflex_features(df):
 def daily_hourly_minute(file_list):
     for file_path in file_list:
         print(f"\n⚙️  Processing: {file_path}")
-
         df = pd.read_csv(file_path)
         df = df.sort_values("timestamp").reset_index(drop=True)
         df["target"] = generate_target(df)
@@ -82,6 +120,9 @@ def daily_hourly_minute(file_list):
             df_base[f"vol_{w}"].fillna(0, inplace=True)
             for q in QUANTILES:
                 df_base[f"rq_{w}_{q}"].fillna(df_base["close"], inplace=True)
+
+        print("➡ Adding advanced features...")
+        df_base = add_advanced_features(df_base)
 
         print("➡ Adding TA indicators...")
         df_base = add_all_ta_features(df_base, open="open", high="high", low="low", close="close", volume="volume", fillna=False)
