@@ -7,6 +7,7 @@ data/
 
 # PyCharm / IntelliJ
 .idea/
+*.iml
 
 # Python general
 __pycache__/
@@ -23,6 +24,7 @@ venv/
 .DS_Store
 Thumbs.db
 
+# Generated / local
 *.xml
 *.json
-*.iml
+*.lock
