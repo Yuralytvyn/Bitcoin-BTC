@@ -1,0 +1,28 @@
+[tool.poetry]
+name = "bitcoin"
+version = "0.1.0"
+description = ""
+authors = ["Yura Lytvyn <lytvynyura@gmail.com>"]
+readme = "README.md"
+package-mode = false
+
+[tool.poetry.dependencies]
+python = ">=3.12,<3.13"
+
+
+xgboost = "^3.1.2"
+
+
+ta = "^0.10.2"
+tsflex = "^0.4.0"
+tsfeatures = "^0.3.1"
+optuna = "^4.6.0"
+shap = "<0.50"
+requests = "^2.32.5"
+matplotlib = "^3.10.8"
+
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
