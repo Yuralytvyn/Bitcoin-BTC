@@ -40,16 +40,30 @@ def main():
             print(f"{info['filename']} already exists — skipping.")
 
     # FEATURE ENGINEERING
-    feature_file = os.path.join(DATA_DIR, "btc_hourly_5y_feature.csv")
-    if not os.path.exists(feature_file):
-        hourly_file = os.path.join(DATA_DIR, "btc_hourly_5y.csv")
-        daily_hourly_minute([hourly_file])
+    feature_inputs = []
+
+    for name, info in FILES.items():
+        raw_file = os.path.join(DATA_DIR, info["filename"])
+        feature_file = raw_file.replace(".csv", "_feature.csv")
+
+        if not os.path.exists(feature_file):
+            feature_inputs.append(raw_file)
+
+    if feature_inputs:
+        daily_hourly_minute(feature_inputs)
 
     # TRAIN/TEST SPLIT
-    train_path = os.path.join(DATA_DIR, "btc_hourly_5y_feature_train.csv")
-    test_path  = os.path.join(DATA_DIR, "btc_hourly_5y_feature_test.csv")
+    need_split = False
 
-    if not (os.path.exists(train_path) and os.path.exists(test_path)):
+    for name, info in FILES.items():
+        feature_file = os.path.join(DATA_DIR, info["filename"].replace(".csv", "_feature.csv"))
+        train_file = feature_file.replace(".csv", "_train.csv")
+        test_file = feature_file.replace(".csv", "_test.csv")
+
+        if not (os.path.exists(train_file) and os.path.exists(test_file)):
+            need_split = True
+
+    if need_split:
         train_test_split()
 
     # MODEL TRAINING
