@@ -16,7 +16,8 @@ def add_advanced_features(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     df["timestamp"] = pd.to_datetime(df["timestamp"])
 
-    # Циклічний час
+    # cyclical coding for proper date+time display like monday is next after sunday
+    # and coding hour using sin and cos to cycle 23:00 and 00:00
     df["hour"] = df["timestamp"].dt.hour
     df["weekday"] = df["timestamp"].dt.weekday
     df["hour_sin"] = np.sin(2 * np.pi * df["hour"] / 24)
@@ -25,16 +26,16 @@ def add_advanced_features(df: pd.DataFrame) -> pd.DataFrame:
     df["weekday_cos"] = np.cos(2 * np.pi * df["weekday"] / 7)
     df.drop(["hour", "weekday"], axis=1, inplace=True)
 
-    # Позиція в діапазоні бару
+    # finding range and determination of close position relatively to bottom of bar
     rng = df["high"] - df["low"]
     df["pos_in_range"] = (df["close"] - df["low"]) / rng.replace(0, np.nan)
     df["pos_in_range"].fillna(0.5, inplace=True)
 
-    # Intrabar return
+    # calculating Intrabar return profit
     df["intrabar_return"] = (df["close"] - df["open"]) / df["open"].replace(0, np.nan)
     df["intrabar_return"].fillna(0, inplace=True)
 
-    # MA ratios
+    # MA average ratios from a bunch of last bars
     df["ma_5"] = df["close"].rolling(5, min_periods=1).mean()
     df["ma_10"] = df["close"].rolling(10, min_periods=1).mean()
     df["ma_50"] = df["close"].rolling(50, min_periods=1).mean()
