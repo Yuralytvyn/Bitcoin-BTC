@@ -1,7 +1,8 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 import os
 
 from fetch_data import fetch_data, save_csv
+from feature_without_engeneering import generate_target
 from feature_engineering import daily_hourly_minute
 from split_train_test import train_test_split
 from Model import start_model
@@ -16,26 +17,20 @@ def main():
         print("Created directory:", DATA_DIR)
 
     # ---- Check each CSV and create if missing ----
+    # As for now only 1 file
     for name, info in FILES.items():
         csv_path = os.path.join(DATA_DIR, info["filename"])
 
         if not os.path.isfile(csv_path):
             print(f"{info['filename']} does not exist — creating...")
 
-            # Determine start date
             if info["start"] == "5y":
-                start = datetime.utcnow() - timedelta(days=5*365)
-            elif info["start"] == "6m":
-                start = datetime.utcnow() - timedelta(days=180)
-            else:
-                start = datetime.strptime(info["start"], "%Y-%m-%d")
-
-            end = datetime.utcnow()
+                start = datetime.now(timezone.utc) - timedelta(days=5 * 365)
+            end = datetime.now(timezone.utc)
             interval = info["interval"]
 
             df = fetch_data(start, end, interval)
             save_csv(df, name)
-
         else:
             print(f"{info['filename']} already exists — skipping.")
 
