@@ -4,21 +4,18 @@ from ta import add_all_ta_features
 from tsflex.features import FeatureCollection, FeatureDescriptor
 
 # ===== CONFIG =====
-TARGET_HORIZON = 3          # було 1, тепер дивимось на 3 свічки вперед
+TARGET_HORIZON = 3
 MAX_LAGS = 50
 ROLL_WINDOWS = [3, 5, 10, 20, 50]
 QUANTILES = [0.1, 0.25, 0.5, 0.75, 0.9]
-THRESHOLD = 0.002           # поріг для up/down
-SMOOTH_WINDOW = 3           # згладжування close для зменшення шуму
+THRESHOLD = 0.005
+SMOOTH_WINDOW = 3
 
-# ============================================================
-#                  ADVANCED FEATURES FOR XGBOOST
-# ============================================================
+
 def add_advanced_features(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     df["timestamp"] = pd.to_datetime(df["timestamp"])
 
-    # Циклічний час
     df["hour"] = df["timestamp"].dt.hour
     df["weekday"] = df["timestamp"].dt.weekday
     df["hour_sin"] = np.sin(2 * np.pi * df["hour"] / 24)
@@ -27,16 +24,13 @@ def add_advanced_features(df: pd.DataFrame) -> pd.DataFrame:
     df["weekday_cos"] = np.cos(2 * np.pi * df["weekday"] / 7)
     df.drop(["hour", "weekday"], axis=1, inplace=True)
 
-    # Позиція в діапазоні бару
     rng = df["high"] - df["low"]
     df["pos_in_range"] = (df["close"] - df["low"]) / rng.replace(0, np.nan)
     df["pos_in_range"].fillna(0.5, inplace=True)
 
-    # Intrabar return
     df["intrabar_return"] = (df["close"] - df["open"]) / df["open"].replace(0, np.nan)
     df["intrabar_return"].fillna(0, inplace=True)
 
-    # MA ratios
     df["ma_5"] = df["close"].rolling(5, min_periods=1).mean()
     df["ma_10"] = df["close"].rolling(10, min_periods=1).mean()
     df["ma_50"] = df["close"].rolling(50, min_periods=1).mean()
@@ -48,46 +42,26 @@ def add_advanced_features(df: pd.DataFrame) -> pd.DataFrame:
         .fillna(1.0)
     )
 
-    # Volume ratio
     df["vol_ma_20"] = df["volume"].rolling(20, min_periods=1).mean()
     df["volume_ratio"] = df["volume"] / df["vol_ma_20"].replace(0, np.nan)
     df["volume_ratio"] = df["volume_ratio"].replace([np.inf, -np.inf], 1.0).fillna(1.0)
 
     return df.drop(columns=["ma_5", "ma_10", "ma_50", "vol_ma_20"])
 
-# ============================================================
-#                     3-КЛАСОВИЙ TARGET (ANTI-NOISE)
-# ============================================================
-def generate_target(
-    df: pd.DataFrame,
-    threshold: float = THRESHOLD,
-    horizon: int = TARGET_HORIZON,
-    smooth_window: int = SMOOTH_WINDOW,
-):
-    """
-    Менш шумний target:
-    - згладжуємо close через rolling mean
-    - дивимось зміну за horizon свічок вперед
-    - перетворюємо на 3 класи: 0 (down), 1 (flat), 2 (up)
-    """
-    # 1) Згладження close
-    smooth_close = df["close"].rolling(window=smooth_window, min_periods=1).mean()
 
-    # 2) Доходність за кілька свічок вперед
-    future_ret = smooth_close.pct_change(periods=horizon).shift(-horizon)
+def generate_target(df: pd.DataFrame):
+    smooth_close = df["close"].rolling(window=SMOOTH_WINDOW, min_periods=1).mean()
+    future_ret = smooth_close.pct_change(periods=TARGET_HORIZON).shift(-TARGET_HORIZON)
 
-    # 3) 3-класовий таргет
     target = pd.cut(
         future_ret,
-        bins=[-np.inf, -threshold, threshold, np.inf],
+        bins=[-np.inf, -THRESHOLD, THRESHOLD, np.inf],
         labels=[0, 1, 2],
     )
 
     return target
 
-# ============================================================
-#                     MANUAL FEATURES
-# ============================================================
+
 def add_manual_features(df: pd.DataFrame) -> pd.DataFrame:
     df["log_return"] = np.log(df["close"] / df["close"].shift(1))
 
@@ -106,47 +80,39 @@ def add_manual_features(df: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
-# ============================================================
-#                     TSFLEX FEATURES
-# ============================================================
+
 def add_tsflex_features(df: pd.DataFrame) -> pd.DataFrame:
-    def skew_func(x):
-        return pd.Series(x).skew()
+    def skew_func(x): return pd.Series(x).skew()
+    def kurt_func(x): return pd.Series(x).kurt()
+    def autocorr_func(x): return pd.Series(x).autocorr()
 
-    def kurt_func(x):
-        return pd.Series(x).kurt()
-
-    def autocorr_func(x):
-        return pd.Series(x).autocorr()
-
-    fc = FeatureCollection(
-        [
-            FeatureDescriptor(np.mean, "close", window=20, stride=1),
-            FeatureDescriptor(np.std, "close", window=20, stride=1),
-            FeatureDescriptor(np.median, "close", window=20, stride=1),
-            FeatureDescriptor(np.max, "close", window=20, stride=1),
-            FeatureDescriptor(np.min, "close", window=20, stride=1),
-            FeatureDescriptor(skew_func, "close", window=20, stride=1),
-            FeatureDescriptor(kurt_func, "close", window=20, stride=1),
-            FeatureDescriptor(autocorr_func, "close", window=20, stride=1),
-        ]
-    )
+    fc = FeatureCollection([
+        FeatureDescriptor(np.mean, "close", window=20, stride=1),
+        FeatureDescriptor(np.std, "close", window=20, stride=1),
+        FeatureDescriptor(np.median, "close", window=20, stride=1),
+        FeatureDescriptor(np.max, "close", window=20, stride=1),
+        FeatureDescriptor(np.min, "close", window=20, stride=1),
+        FeatureDescriptor(skew_func, "close", window=20, stride=1),
+        FeatureDescriptor(kurt_func, "close", window=20, stride=1),
+        FeatureDescriptor(autocorr_func, "close", window=20, stride=1),
+    ])
 
     res = fc.calculate(df, return_df=True)
     res.columns = [f"tsf_{c}" for c in res.columns]
     return pd.concat([df, res], axis=1)
 
-# ============================================================
-#                MAIN FEATURE ENGINEERING PIPELINE
-# ============================================================
+
 def daily_hourly_minute(file_list):
     for file_path in file_list:
         print(f"\n⚙️  Processing: {file_path}")
         df = pd.read_csv(file_path)
         df = df.sort_values("timestamp").reset_index(drop=True)
 
-        # Менш шумний таргет
         df["target"] = generate_target(df)
+
+        print("\n📊 TARGET DISTRIBUTION:")
+        print(df["target"].value_counts(normalize=True))
+
         df_base = df.copy()
 
         print("➡ Adding manual features...")
@@ -181,18 +147,15 @@ def daily_hourly_minute(file_list):
         )
 
         ta_columns = [
-            col
-            for col in df_base.columns
-            if col.startswith(
-                ("volume_", "volatility_", "trend_", "momentum_", "others_")
-            )
+            col for col in df_base.columns
+            if col.startswith(("volume_", "volatility_", "trend_", "momentum_", "others_"))
         ]
 
         for col in ta_columns:
             if df_base[col].isna().sum() == 0:
                 continue
 
-            if col.startswith("volume_") or col.startswith("others_"):
+            if col.startswith(("volume_", "others_")):
                 df_base[col].fillna(0, inplace=True)
 
             elif col.startswith("momentum_"):
@@ -210,6 +173,7 @@ def daily_hourly_minute(file_list):
 
         print("➡ Adding tsflex features...")
         df_base = add_tsflex_features(df_base)
+
         tsf_columns = [col for col in df_base.columns if col.startswith("tsf_")]
 
         for col in tsf_columns:
@@ -217,28 +181,19 @@ def daily_hourly_minute(file_list):
                 continue
 
             if any(key in col for key in ["mean", "median", "min", "max"]):
-                df_base[col] = (
-                    df_base[col]
-                    .fillna(method="ffill")
-                    .fillna(df_base[col].iloc[0])
-                )
+                df_base[col] = df_base[col].ffill().fillna(df_base[col].iloc[0])
             else:
                 df_base[col].fillna(0, inplace=True)
 
-        nan_counts = df_base.isna().sum()
-        nan_cols = nan_counts[nan_counts > 0]
+        # ================= FIX =================
+        print("➡ cleaning...")
 
-        if len(nan_cols) > 0:
-            print("\n⚠️  NAN DETECTED IN THE FOLLOWING COLUMNS:")
-            for col, count in nan_cols.items():
-                print(f"   → {col}: {count} NaN values")
-            print("\nFirst rows that contain NaN:")
-            print(df_base[df_base.isna().any(axis=1)].head().to_string())
-            print("====================================================\n")
-        else:
-            print("✔ No NaN found in dataset.")
+        df_base = df_base.dropna(subset=["target"])
+        df_base = df_base.fillna(0)
 
-        df_final = df_base.dropna().reset_index(drop=True)
+        df_final = df_base.reset_index(drop=True)
+        # ======================================
+
         output_path = file_path.replace(".csv", "_feature.csv")
         df_final.to_csv(output_path, index=False)
 
