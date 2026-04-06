@@ -31,18 +31,20 @@ def add_advanced_features(df: pd.DataFrame) -> pd.DataFrame:
     df["intrabar_return"] = (df["close"] - df["open"]) / df["open"].replace(0, np.nan)
     df["intrabar_return"].fillna(0, inplace=True)
 
-    df["ma_5"] = df["close"].rolling(5, min_periods=1).mean()
-    df["ma_10"] = df["close"].rolling(10, min_periods=1).mean()
-    df["ma_50"] = df["close"].rolling(50, min_periods=1).mean()
+    df["ma_5"] = df["close"].rolling(5, min_periods=1).mean().shift(1)
+    df["ma_10"] = df["close"].rolling(10, min_periods=1).mean().shift(1)
+    df["ma_50"] = df["close"].rolling(50, min_periods=1).mean().shift(1)
+
     df["ma_ratio_5_50"] = df["ma_5"] / df["ma_50"].replace(0, np.nan)
     df["ma_ratio_10_50"] = df["ma_10"] / df["ma_50"].replace(0, np.nan)
+
     df[["ma_ratio_5_50", "ma_ratio_10_50"]] = (
         df[["ma_ratio_5_50", "ma_ratio_10_50"]]
         .replace([np.inf, -np.inf], 1.0)
         .fillna(1.0)
     )
 
-    df["vol_ma_20"] = df["volume"].rolling(20, min_periods=1).mean()
+    df["vol_ma_20"] = df["volume"].rolling(20, min_periods=1).mean().shift(1)
     df["volume_ratio"] = df["volume"] / df["vol_ma_20"].replace(0, np.nan)
     df["volume_ratio"] = df["volume_ratio"].replace([np.inf, -np.inf], 1.0).fillna(1.0)
 
@@ -50,7 +52,7 @@ def add_advanced_features(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def generate_target(df: pd.DataFrame):
-    smooth_close = df["close"].rolling(window=SMOOTH_WINDOW, min_periods=1).mean()
+    smooth_close = df["close"].rolling(window=SMOOTH_WINDOW, min_periods=1).mean().shift(1)
     future_ret = smooth_close.pct_change(periods=TARGET_HORIZON).shift(-TARGET_HORIZON)
 
     target = pd.cut(
@@ -69,14 +71,14 @@ def add_manual_features(df: pd.DataFrame) -> pd.DataFrame:
         df[f"lag_{lag}"] = df["close"].shift(lag)
 
     for w in ROLL_WINDOWS:
-        df[f"rmean_{w}"] = df["close"].rolling(w, min_periods=1).mean()
-        df[f"rstd_{w}"] = df["close"].rolling(w, min_periods=1).std(ddof=0)
-        df[f"rmin_{w}"] = df["close"].rolling(w, min_periods=1).min()
-        df[f"rmax_{w}"] = df["close"].rolling(w, min_periods=1).max()
-        df[f"vol_{w}"] = df["log_return"].rolling(w, min_periods=1).std(ddof=0)
+        df[f"rmean_{w}"] = df["close"].rolling(w, min_periods=1).mean().shift(1)
+        df[f"rstd_{w}"] = df["close"].rolling(w, min_periods=1).std(ddof=0).shift(1)
+        df[f"rmin_{w}"] = df["close"].rolling(w, min_periods=1).min().shift(1)
+        df[f"rmax_{w}"] = df["close"].rolling(w, min_periods=1).max().shift(1)
+        df[f"vol_{w}"] = df["log_return"].rolling(w, min_periods=1).std(ddof=0).shift(1)
 
         for q in QUANTILES:
-            df[f"rq_{w}_{q}"] = df["close"].rolling(w, min_periods=1).quantile(q)
+            df[f"rq_{w}_{q}"] = df["close"].rolling(w, min_periods=1).quantile(q).shift(1)
 
     return df
 
@@ -97,8 +99,9 @@ def add_tsflex_features(df: pd.DataFrame) -> pd.DataFrame:
         FeatureDescriptor(autocorr_func, "close", window=20, stride=1),
     ])
 
-    res = fc.calculate(df, return_df=True)
+    res = fc.calculate(df, return_df=True).shift(1)
     res.columns = [f"tsf_{c}" for c in res.columns]
+
     return pd.concat([df, res], axis=1)
 
 
@@ -110,12 +113,8 @@ def daily_hourly_minute(file_list):
 
         df["target"] = generate_target(df)
 
-        print("\n📊 TARGET DISTRIBUTION:")
-        print(df["target"].value_counts(normalize=True))
-
         df_base = df.copy()
 
-        print("➡ Adding manual features...")
         df_base = add_manual_features(df_base)
         df_base["log_return"].fillna(0, inplace=True)
 
@@ -132,10 +131,8 @@ def daily_hourly_minute(file_list):
             for q in QUANTILES:
                 df_base[f"rq_{w}_{q}"].fillna(df_base["close"], inplace=True)
 
-        print("➡ Adding advanced features...")
         df_base = add_advanced_features(df_base)
 
-        print("➡ Adding TA indicators...")
         df_base = add_all_ta_features(
             df_base,
             open="open",
@@ -144,6 +141,12 @@ def daily_hourly_minute(file_list):
             close="close",
             volume="volume",
             fillna=False,
+        )
+
+        # 🔴 FIX: remove ichimoku
+        df_base = df_base.drop(
+            columns=[col for col in df_base.columns if "ichimoku" in col.lower()],
+            errors="ignore"
         )
 
         ta_columns = [
@@ -165,13 +168,11 @@ def daily_hourly_minute(file_list):
                     df_base[col].fillna(0, inplace=True)
 
             elif col.startswith("trend_"):
-                first_valid = df_base[col].dropna().iloc[0]
-                df_base[col].fillna(first_valid, inplace=True)
+                df_base[col] = df_base[col].ffill().fillna(0)
 
             elif col.startswith("volatility_"):
                 df_base[col].fillna(0, inplace=True)
 
-        print("➡ Adding tsflex features...")
         df_base = add_tsflex_features(df_base)
 
         tsf_columns = [col for col in df_base.columns if col.startswith("tsf_")]
@@ -185,14 +186,10 @@ def daily_hourly_minute(file_list):
             else:
                 df_base[col].fillna(0, inplace=True)
 
-        # ================= FIX =================
-        print("➡ cleaning...")
-
         df_base = df_base.dropna(subset=["target"])
         df_base = df_base.fillna(0)
 
         df_final = df_base.reset_index(drop=True)
-        # ======================================
 
         output_path = file_path.replace(".csv", "_feature.csv")
         df_final.to_csv(output_path, index=False)
