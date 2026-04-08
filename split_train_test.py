@@ -13,6 +13,7 @@ from init import DATA_DIR, VALIDATION, VALIDATION_SIZE
 
 FILENAME: str = "btc_hourly_5y_feature.csv"
 TEST_SIZE: float = 0.2
+GAP_STEPS: int = 3  # = TARGET_HORIZON
 
 
 # =============================================================================
@@ -34,6 +35,30 @@ def _print_class_distribution(name: str, df: pd.DataFrame):
             print(f"⚠️ WARNING: Class {cls} is MISSING from {name} set!")
 
 
+def _print_normalized_distribution(train_df, val_df, test_df):
+    print("\n🔍 NORMALIZED DISTRIBUTION:")
+
+    print("\nTRAIN:")
+    print(train_df["target"].value_counts(normalize=True))
+
+    if val_df is not None:
+        print("\nVAL:")
+        print(val_df["target"].value_counts(normalize=True))
+
+    print("\nTEST:")
+    print(test_df["target"].value_counts(normalize=True))
+
+
+def _ensure_time_sorted(df: pd.DataFrame) -> pd.DataFrame:
+    if "timestamp" not in df.columns:
+        return df.reset_index(drop=True)
+
+    df = df.copy()
+    df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
+    df = df.sort_values("timestamp", kind="mergesort").reset_index(drop=True)
+    return df
+
+
 # =============================================================================
 # Scaling
 # =============================================================================
@@ -45,13 +70,9 @@ def apply_scaling(
 ):
     scaler = StandardScaler()
 
-    # ❗ НЕ чіпаємо ці колонки
     exclude_cols = {"target", "timestamp", "open_time", "close_time"}
-
-    # ❗ РИНКОВІ ДАНІ (НЕ СКЕЙЛИТИ)
     price_cols = {"open", "high", "low", "close", "volume"}
 
-    # ✔️ тільки ті фічі, які реально треба масштабувати
     feature_cols = [
         col for col in train_df.columns
         if col not in exclude_cols
@@ -59,7 +80,7 @@ def apply_scaling(
         and pd.api.types.is_numeric_dtype(train_df[col])
     ]
 
-    print(f"\n🧠 Scaling {len(feature_cols)} features (excluding price columns)")
+    print(f"\n🧠 Scaling {len(feature_cols)} features")
 
     scaler.fit(train_df[feature_cols])
 
@@ -69,10 +90,8 @@ def apply_scaling(
     if val_df is not None:
         val_df.loc[:, feature_cols] = scaler.transform(val_df[feature_cols])
 
-    # 💾 збереження scaler
     scaler_path = os.path.join(DATA_DIR, "scaler.pkl")
     joblib.dump(scaler, scaler_path)
-    print(f"💾 Scaler saved to: {scaler_path}")
 
     return train_df, val_df, test_df
 
@@ -86,65 +105,70 @@ def train_test_split(
     test_size: float = TEST_SIZE,
     create_validation: bool = VALIDATION,
     validation_size: float = VALIDATION_SIZE,
+    gap_steps: int = GAP_STEPS,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, Optional[pd.DataFrame]]:
 
     path = os.path.join(DATA_DIR, filename)
     df = pd.read_csv(path)
 
     df = df.dropna(subset=["target"]).reset_index(drop=True)
+    df = _ensure_time_sorted(df)
 
-    n_samples = len(df)
+    n = len(df)
+    test_split_idx = int(n * (1.0 - test_size))
 
-    # ✔️ time-based split (це правильно)
-    test_split_idx = int(n_samples * (1.0 - test_size))
+    test_start = test_split_idx
+    gap_start = max(0, test_start - gap_steps)
 
-    train_df = df.iloc[:test_split_idx].copy()
-    test_df = df.iloc[test_split_idx:].copy()
+    if not create_validation:
+        train_df = df.iloc[:gap_start].copy()
+        test_df = df.iloc[test_start:].copy()
+        val_df = None
 
-    val_df: Optional[pd.DataFrame] = None
+    else:
+        pre_test_end = gap_start
 
-    if create_validation:
-        val_length = int(len(train_df) * validation_size)
+        val_len = int(pre_test_end * validation_size)
+        val_end = pre_test_end
+        val_start = val_end - val_len
 
-        val_df = train_df.iloc[-val_length:].copy()
-        train_df = train_df.iloc[:-val_length].copy()
+        train_end = max(0, val_start - gap_steps)
 
-    # reset index
+        train_df = df.iloc[:train_end].copy()
+        val_df = df.iloc[val_start:val_end].copy()
+        test_df = df.iloc[test_start:].copy()
+
     train_df = train_df.reset_index(drop=True)
     test_df = test_df.reset_index(drop=True)
-
     if val_df is not None:
         val_df = val_df.reset_index(drop=True)
 
-    # 📊 class distribution
-    _print_class_distribution("TRAIN", train_df)
+    print("\n🧱 SPLIT INFO")
+    print(f"train: {len(train_df)}")
+    print(f"val  : {0 if val_df is None else len(val_df)}")
+    print(f"test : {len(test_df)}")
 
+    # 📊 класи
+    _print_class_distribution("TRAIN", train_df)
     if val_df is not None:
         _print_class_distribution("VAL", val_df)
-
     _print_class_distribution("TEST", test_df)
+
+    # 🔥 ОСНОВНЕ — normalized
+    _print_normalized_distribution(train_df, val_df, test_df)
 
     print("\n-------------------------------------------------------\n")
 
-    # 🚀 Scaling
-    print("🧲 Applying StandardScaler...")
+    # scaling
     train_df, val_df, test_df = apply_scaling(train_df, val_df, test_df)
 
-    # 💾 Save files
+    # save
     base_name = filename.rsplit(".csv", 1)[0]
 
-    train_path = os.path.join(DATA_DIR, f"{base_name}_train.csv")
-    test_path = os.path.join(DATA_DIR, f"{base_name}_test.csv")
-
-    train_df.to_csv(train_path, index=False)
-    test_df.to_csv(test_path, index=False)
-
-    print(f"💾 Train saved to: {train_path}")
-    print(f"💾 Test saved to: {test_path}")
+    train_df.to_csv(os.path.join(DATA_DIR, f"{base_name}_train.csv"), index=False)
+    test_df.to_csv(os.path.join(DATA_DIR, f"{base_name}_test.csv"), index=False)
 
     if val_df is not None:
-        val_path = os.path.join(DATA_DIR, f"{base_name}_val.csv")
-        val_df.to_csv(val_path, index=False)
-        print(f"💾 Val saved to: {val_path}")
+        val_df.to_csv(os.path.join(DATA_DIR, f"{base_name}_val.csv"), index=False)
 
     return train_df, test_df, val_df
