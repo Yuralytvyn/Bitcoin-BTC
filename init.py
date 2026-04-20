@@ -15,3 +15,5 @@ BASE_URL = "https://api.binance.com/api/v3/klines"
 
 VALIDATION = True
 VALIDATION_SIZE = 0.2
+
+PREDICTION_WINDOW = 3
